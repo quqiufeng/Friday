@@ -363,13 +363,19 @@ tail -f /tmp/autobot_tasks/result.json
 
 ### 8.4 WSL2 端口映射 (Windows 宿主机访问)
 
-**WSL2 Ubuntu IP**: `172.23.212.172`
+WSL2 Ubuntu 运行在 Windows 宿主机上的虚拟机中，Windows 浏览器无法直接访问 WSL2 内部服务。需要通过 **端口映射 (Port Proxy)** 将 Windows 端口转发到 WSL2 Ubuntu 实例。
 
-在 WSL2 Ubuntu 中，需要将端口映射到 Windows 主机才能从浏览器访问：
+**逻辑说明**：
+```
+Windows 浏览器 localhost:10024 
+    → 转发到 → WSL2 Ubuntu 172.23.212.172:10024
+```
+
+**WSL2 Ubuntu IP**: `172.23.212.172` (可通过 `hostname -I` 查看)
 
 ```powershell
 # 在 Windows 管理员 PowerShell 中执行
-# 将 WSL2 (172.23.212.172) 端口转发到 Windows localhost
+# 格式: netsh interface portproxy add v4tov4 listenport=Windows端口 connectaddress=WSL2_IP connectport=WSL2端口
 
 # 映射 Gateway WebUI (10024)
 netsh interface portproxy add v4tov4 listenport=10024 connectaddress=172.23.212.172 connectport=10024
