@@ -157,7 +157,54 @@ http://localhost:10024/duplex/                 # 视频双工
 
 ---
 
-## 3. tmux 使用指南
+## 3. 语音识别 (Faster-Whisper)
+
+### 3.1 安装
+
+```bash
+pip install faster-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+### 3.2 模型下载
+
+模型路径: `/opt/image/faster-whisper-large-v3`
+
+如需下载新模型:
+```python
+from faster_whisper import WhisperModel
+# 首次使用会自动下载到默认目录
+model = WhisperModel("large-v3")
+```
+
+### 3.3 测试识别
+
+```bash
+python -c "
+import sys
+sys.path.insert(0, '/home/dministrator/Friday')
+from faster_whisper import WhisperModel
+
+model = WhisperModel('/opt/image/faster-whisper-large-v3', device='cuda', compute_type='float16')
+segments, info = model.transcribe('/home/dministrator/video/voice.wav', language='zh', beam_size=5, vad_filter=True)
+
+text = ''
+for segment in segments:
+    text += segment.text.strip()
+
+print('识别结果:', text)
+"
+```
+
+参数说明:
+- `language="zh"` - 指定中文，其他语言可省略
+- `beam_size=5` - 束搜索宽度，越大越准确
+- `vad_filter=True` - 启用语音活动检测，过滤噪音
+- `device="cuda"` - 使用 GPU 加速
+- `compute_type="float16"` - 半精度，更快
+
+---
+
+## 4. tmux 使用指南
 
 ### 3.1 启动 tmux 会话
 
