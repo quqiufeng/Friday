@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 贾维斯语音助手
-语音输入 → SenseVoice识别 → OpenCode执行 → CosyVoice语音回复
+语音输入 → Faster-Whisper识别 → OpenCode执行 → CosyVoice语音回复
 """
 
 import os
@@ -10,12 +10,10 @@ import json
 import subprocess
 import requests
 from pathlib import Path
+from faster_whisper import WhisperModel
 
 OPENCODE_ACP_URL = "http://localhost:4096"
-SENSE_VOICE_BIN = "/home/dministrator/SenseVoice.cpp/bin/sense-voice-main"
-SENSE_VOICE_MODEL = (
-    "/home/dministrator/SenseVoice.cpp/models/sense-voice-small-q6_k.gguf"
-)
+WHISPER_MODEL_PATH = "/opt/image/faster-whisper-large-v3"
 COSYVOICE_DIR = "/home/dministrator/CosyVoice"
 DEFAULT_REF_AUDIO = "/opt/MiniCPM/assets/ref_audio/ref_minicpm_signature.wav"
 
@@ -23,6 +21,17 @@ GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
 RESET = "\033[0m"
+
+whisper_model = None
+
+
+def get_whisper_model():
+    global whisper_model
+    if whisper_model is None:
+        log_info("加载 Whisper 模型...")
+        whisper_model = WhisperModel(WHISPER_MODEL_PATH, device="cuda", compute_type="float16")
+        log_info("Whisper 模型加载完成")
+    return whisper_model
 
 
 def log_info(msg):
@@ -53,24 +62,27 @@ def record_audio(duration=5, output="/tmp/jarvis_input.wav"):
     return output
 
 
-def recognize_sensevoice(audio_file):
+def recognize_whisper(audio_file):
     log_info("正在识别...")
-    cmd = f'{SENSE_VOICE_BIN} -m {SENSE_VOICE_MODEL} -oj "{audio_file}"'
     try:
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=60
+        model = get_whisper_model()
+        segments, info = model.transcribe(
+            audio_file,
+            language="zh",
+            beam_size=5,
+            vad_filter=True
         )
-        if result.returncode == 0 and result.stdout:
-            # 解析 JSON 输出
-            for line in result.stdout.strip().split("\n"):
-                if line.startswith("{"):
-                    data = json.loads(line)
-                    text = data.get("text", "").strip()
-                    if text:
-                        return text
-            return result.stdout.strip()
-        log_error(f"识别失败: {result.stderr}")
-        return None
+        
+        text = ""
+        for segment in segments:
+            text += segment.text.strip()
+        
+        if text:
+            log_info(f"识别完成: {text}")
+            return text
+        else:
+            log_error("未识别到文字")
+            return None
     except Exception as e:
         log_error(f"识别异常: {e}")
         return None
@@ -143,7 +155,7 @@ def main():
         list_ref_audios()
 
         audio = record_audio(5)
-        text = recognize_sensevoice(audio)
+        text = recognize_whisper(audio)
 
         if text:
             print(f"\n识别: {text}\n")
