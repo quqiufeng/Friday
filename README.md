@@ -361,6 +361,46 @@ tail -f /tmp/autobot_tasks/result.json
 | OpenCode 配置 | `~/.config/opencode/opencode.json` |
 | OpenCode 插件 | `~/.agent/skills/` |
 
+### 8.4 WSL2 端口映射 (Windows 宿主机访问)
+
+在 WSL2 Ubuntu 中，需要将端口映射到 Windows 主机才能从浏览器访问：
+
+```bash
+# 方法1: 一次性映射 (重启后失效)
+# 将 WSL2 端口转发到 Windows
+
+# 映射 Gateway WebUI (10024)
+netsh interface portproxy add v4tov4 listenport=10024 connectaddress=127.0.0.1 connectport=10024
+
+# 映射 OpenCode ACP (4096)
+netsh interface portproxy add v4tov4 listenport=4096 connectaddress=127.0.0.1 connectport=4096
+
+# 映射 llama.cpp 大模型 (11434)
+netsh interface portproxy add v4tov4 listenport=11434 connectaddress=127.0.0.1 connectport=11434
+
+# 查看已映射的端口
+netsh interface portproxy show all
+
+# 删除端口映射
+netsh interface portproxy delete v4tov4 listenport=10024
+```
+
+```powershell
+# 方法2: PowerShell 管理员 (推荐)
+# 同样效果
+netsh interface portproxy add v4tov4 listenport=10024 connectport=10024 connectaddress=localhost
+```
+
+**访问方式 (Windows 浏览器)**：
+
+| 服务 | 地址 |
+|------|------|
+| WebUI | http://localhost:10024/omni/omni.html |
+| OpenCode | http://localhost:4096 |
+| 大模型 API | http://localhost:11434 |
+
+**注意**：以上命令需要在 **Windows 管理员 PowerShell** 中执行，不是 WSL2 里面！
+
 ---
 
 **这就是你的贾维斯 - 随时随地为你服务的 AI 助手！** 🤖
