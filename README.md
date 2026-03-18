@@ -363,20 +363,22 @@ tail -f /tmp/autobot_tasks/result.json
 
 ### 8.4 WSL2 端口映射 (Windows 宿主机访问)
 
+**WSL2 Ubuntu IP**: `172.23.212.172`
+
 在 WSL2 Ubuntu 中，需要将端口映射到 Windows 主机才能从浏览器访问：
 
-```bash
-# 方法1: 一次性映射 (重启后失效)
-# 将 WSL2 端口转发到 Windows
+```powershell
+# 在 Windows 管理员 PowerShell 中执行
+# 将 WSL2 (172.23.212.172) 端口转发到 Windows localhost
 
 # 映射 Gateway WebUI (10024)
-netsh interface portproxy add v4tov4 listenport=10024 connectaddress=127.0.0.1 connectport=10024
+netsh interface portproxy add v4tov4 listenport=10024 connectaddress=172.23.212.172 connectport=10024
 
 # 映射 OpenCode ACP (4096)
-netsh interface portproxy add v4tov4 listenport=4096 connectaddress=127.0.0.1 connectport=4096
+netsh interface portproxy add v4tov4 listenport=4096 connectaddress=172.23.212.172 connectport=4096
 
 # 映射 llama.cpp 大模型 (11434)
-netsh interface portproxy add v4tov4 listenport=11434 connectaddress=127.0.0.1 connectport=11434
+netsh interface portproxy add v4tov4 listenport=11434 connectaddress=172.23.212.172 connectport=11434
 
 # 查看已映射的端口
 netsh interface portproxy show all
