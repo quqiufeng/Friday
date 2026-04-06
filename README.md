@@ -515,7 +515,7 @@ netsh interface portproxy add v4tov4 listenport=10024 connectport=10024 connecta
 
 ## 9. llama.cpp-omni 全双工部署 (WebRTC Demo)
 
-> 基于 llama.cpp-omni + WebRTC 实现全双工实时视频交互，支持量化版本
+> 基于 [llama.cpp-omni](https://github.com/tc-mb/llama.cpp-omni) + WebRTC 实现全双工实时视频交互，支持量化版本
 
 ### 9.1 硬件要求
 
