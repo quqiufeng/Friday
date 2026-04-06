@@ -1,0 +1,14 @@
+{
+  "session_id": "20260406_151153_omni_mnmur430",
+  "mode": "duplex",
+  "worker_id": 0,
+  "start_ts": "2026-04-06T07:11:55.081714+00:00",
+  "config": {
+    "system_prompt": "Streaming Omni Conversation.",
+    "ref_audio": "/tmp/duplex_llm_ref_ff_5nh12.wav",
+    "deferred_finalize": true,
+    "max_slice_nums": 1,
+    "length_penalty": 1.1
+  },
+  "chunks": []
+}

@@ -1,6 +1,7 @@
 {
     "model": {
-        "model_path": "openbmb/MiniCPM-o-4_5",
+        "model_path": "/opt/image/Model-7.6B-Q4_K_M.gguf",
+        "mmproj_path": "/opt/image/mmproj-model-f16.gguf",
         "pt_path": null,
         "attn_implementation": "auto"
     },
