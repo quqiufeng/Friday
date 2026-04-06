@@ -117,17 +117,26 @@ from core.capabilities import ProcessorMode
 from core.processors.base import BaseProcessor, MiniCPMOProcessorMixin
 from core.schemas import (
     # Chat
-    ChatRequest, ChatResponse,
+    ChatRequest,
+    ChatResponse,
     # Streaming
-    StreamingRequest, StreamingChunk, StreamingResponse, RollbackResult,
+    StreamingRequest,
+    StreamingChunk,
+    StreamingResponse,
+    RollbackResult,
     # Duplex
-    DuplexConfig, DuplexGenerateResult,
+    DuplexConfig,
+    DuplexGenerateResult,
     # Common
-    Message, Role,
+    Message,
+    Role,
 )
 
 if TYPE_CHECKING:
-    from MiniCPMO45.modeling_minicpmo_unified import MiniCPMO, ProcessorMode as ModelProcessorMode
+    from oka.minicpmo import (
+        MiniCPMO,
+        ProcessorMode as ModelProcessorMode,
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -137,28 +146,29 @@ logger = logging.getLogger(__name__)
 # View 类：各模式的专用接口
 # ============================================================
 
+
 class ChatView(MiniCPMOProcessorMixin):
     """Chat 模式视图
-    
+
     提供 Chat 模式专用的 API。
-    
+
     特性：
     - 无状态（每次完整 prefill）
     - 支持多模态（文本、图像、音频）
     - 支持 TTS 输出
-    
+
     示例：
         >>> chat = processor.set_chat_mode()
         >>> response = chat.chat(request)
         >>> print(response.content)
     """
-    
+
     def __init__(self, model: "MiniCPMO", ref_audio_path: Optional[str] = None):
         self._model = model
         self.ref_audio_path = ref_audio_path
         self._ref_audio_cache = None
         self._session_id = None
-    
+
     def prefill(
         self,
         session_id: str,
@@ -183,7 +193,7 @@ class ChatView(MiniCPMOProcessorMixin):
             max_inp_length=max_inp_length,
         )
         return prompt
-    
+
     def generate(
         self,
         session_id: str,
@@ -211,7 +221,7 @@ class ChatView(MiniCPMOProcessorMixin):
             length_penalty=length_penalty,
         )
         return result
-    
+
     def streaming_generate(
         self,
         session_id: str,
@@ -222,9 +232,10 @@ class ChatView(MiniCPMOProcessorMixin):
     ):
         """基于已有 KV cache 做流式 generate（yield StreamingChunk）"""
         import base64
+
         start_time = time.time()
         chunk_index = 0
-        
+
         try:
             iter_gen = self._model.streaming_generate(
                 session_id=session_id,
@@ -234,30 +245,31 @@ class ChatView(MiniCPMOProcessorMixin):
                 use_tts_template=True,
                 length_penalty=length_penalty,
             )
-            
+
             for item in iter_gen:
                 if item is None:
                     continue
                 if not isinstance(item, (tuple, list)) or len(item) < 2:
                     continue
-                    
+
                 item1, item2 = item[0], item[1]
-                
+
                 if generate_audio:
                     if item1 is None and item2 is None:
                         continue
                     waveform_chunk = item1
                     text_value = item2 if item2 and isinstance(item2, str) else None
                     audio_data = None
-                    if waveform_chunk is not None and hasattr(waveform_chunk, 'cpu'):
+                    if waveform_chunk is not None and hasattr(waveform_chunk, "cpu"):
                         audio_np = waveform_chunk.cpu().numpy().astype(np.float32)
                         audio_bytes = audio_np.tobytes()
-                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                        audio_data = base64.b64encode(audio_bytes).decode("utf-8")
                 else:
                     text_value = item1 if item1 and isinstance(item1, str) else None
                     audio_data = None
-                
+
                 from core.schemas.streaming import StreamingChunk
+
                 yield StreamingChunk(
                     chunk_index=chunk_index,
                     text_delta=text_value,
@@ -266,16 +278,16 @@ class ChatView(MiniCPMOProcessorMixin):
                     is_final=False,
                 )
                 chunk_index += 1
-                
+
         except Exception as e:
             logger.error(f"ChatView streaming_generate error: {e}", exc_info=True)
             raise
-    
+
     @property
     def kv_cache_length(self) -> int:
         """当前 KV cache 长度"""
         return self._model._get_kv_cache_length()
-    
+
     def chat(
         self,
         request: ChatRequest,
@@ -284,20 +296,22 @@ class ChatView(MiniCPMOProcessorMixin):
         generate_audio: Optional[bool] = None,
     ) -> ChatResponse:
         """执行 Chat 推理
-        
+
         Args:
             request: Chat 请求
             max_new_tokens: 最大生成 token 数
             do_sample: 是否采样
             generate_audio: 是否生成音频（None 时从 request.tts.enabled 读取）
-            
+
         Returns:
             ChatResponse
         """
         start_time = time.time()
-        
+
         try:
-            return self._chat_impl(request, max_new_tokens, do_sample, generate_audio, start_time)
+            return self._chat_impl(
+                request, max_new_tokens, do_sample, generate_audio, start_time
+            )
         except Exception as e:
             logger.error(f"Chat 推理失败: {e}")
             return ChatResponse(
@@ -306,7 +320,7 @@ class ChatView(MiniCPMOProcessorMixin):
                 text="",
                 latency_ms=(time.time() - start_time) * 1000,
             )
-    
+
     def _chat_impl(
         self,
         request: ChatRequest,
@@ -316,32 +330,42 @@ class ChatView(MiniCPMOProcessorMixin):
         start_time: float,
     ) -> ChatResponse:
         """Chat 推理实现（内部方法）"""
-        
+
         # 确定 TTS 参数
-        tts_config = request.tts if hasattr(request, 'tts') and request.tts else None
+        tts_config = request.tts if hasattr(request, "tts") and request.tts else None
         tts_enabled = tts_config.enabled if tts_config else False
-        
+
         # 如果 TTS 启用但没指定 ref_audio，使用 ChatView 的默认 ref_audio
-        if tts_config and tts_enabled and not tts_config.ref_audio_path and not tts_config.ref_audio_data:
+        if (
+            tts_config
+            and tts_enabled
+            and not tts_config.ref_audio_path
+            and not tts_config.ref_audio_data
+        ):
             if self.ref_audio_path:
-                tts_config = tts_config.model_copy(update={"ref_audio_path": self.ref_audio_path})
-        
+                tts_config = tts_config.model_copy(
+                    update={"ref_audio_path": self.ref_audio_path}
+                )
+
         # 如果未显式指定 generate_audio，从 tts.enabled 读取
         if generate_audio is None:
             generate_audio = tts_enabled
-        
-        use_tts_template = request.use_tts_template if hasattr(request, 'use_tts_template') else False
+
+        use_tts_template = (
+            request.use_tts_template if hasattr(request, "use_tts_template") else False
+        )
         use_tts_template = use_tts_template or generate_audio
-        
+
         output_audio_path = None
         tts_sampling_params = None
-        
+
         if generate_audio and tts_config:
             output_audio_path = tts_config.output_path
-            
+
             # 构建 TTS 采样参数
             if tts_config.sampling:
-                from MiniCPMO45.utils import TTSSamplingParams as ModelTTSSamplingParams
+                from oka.minicpmo import TTSSamplingParams as ModelTTSSamplingParams
+
                 tts_sampling_params = ModelTTSSamplingParams(
                     top_p=tts_config.sampling.top_p,
                     min_p=tts_config.sampling.min_p,
@@ -351,13 +375,13 @@ class ChatView(MiniCPMOProcessorMixin):
                     win_size=tts_config.sampling.win_size,
                     tau_r=tts_config.sampling.tau_r,
                 )
-        
+
         # 转换消息格式
         msgs = self._convert_messages_to_model_format(
             request.messages,
             tts_config=tts_config,
         )
-        
+
         # 解析 TTS ref audio（独立于 LLM ref audio）
         # 当用户在 tts_config 中提供了 ref_audio_data 或 ref_audio_path 时，
         # 将其解析为 ndarray 传给 model.chat()，用于 TTS vocoder 初始化。
@@ -367,14 +391,22 @@ class ChatView(MiniCPMOProcessorMixin):
         if tts_config and generate_audio:
             if tts_config.ref_audio_data:
                 import base64 as b64_mod
+
                 tts_ref_bytes = b64_mod.b64decode(tts_config.ref_audio_data)
                 tts_ref_audio = np.frombuffer(tts_ref_bytes, dtype=np.float32)
-                logger.info(f"Chat TTS ref audio from tts_config.ref_audio_data: {len(tts_ref_audio)} samples ({len(tts_ref_audio)/16000:.1f}s)")
+                logger.info(
+                    f"Chat TTS ref audio from tts_config.ref_audio_data: {len(tts_ref_audio)} samples ({len(tts_ref_audio) / 16000:.1f}s)"
+                )
             elif tts_config.ref_audio_path:
                 import librosa
-                tts_ref_audio, _ = librosa.load(tts_config.ref_audio_path, sr=16000, mono=True)
-                logger.info(f"Chat TTS ref audio from tts_config.ref_audio_path: {tts_config.ref_audio_path}")
-        
+
+                tts_ref_audio, _ = librosa.load(
+                    tts_config.ref_audio_path, sr=16000, mono=True
+                )
+                logger.info(
+                    f"Chat TTS ref audio from tts_config.ref_audio_path: {tts_config.ref_audio_path}"
+                )
+
         # 调用模型
         with torch.no_grad():
             result = self._model.chat(
@@ -389,26 +421,36 @@ class ChatView(MiniCPMOProcessorMixin):
                 tts_sampling_params=tts_sampling_params,
                 tts_ref_audio=tts_ref_audio,
                 # 高级参数
-                omni_mode=request.omni_mode if hasattr(request, 'omni_mode') else False,
-                enable_thinking=request.enable_thinking if hasattr(request, 'enable_thinking') else False,
-                return_prompt=request.return_prompt if hasattr(request, 'return_prompt') else False,
+                omni_mode=request.omni_mode if hasattr(request, "omni_mode") else False,
+                enable_thinking=request.enable_thinking
+                if hasattr(request, "enable_thinking")
+                else False,
+                return_prompt=request.return_prompt
+                if hasattr(request, "return_prompt")
+                else False,
                 # 图像参数
-                max_slice_nums=request.image.max_slice_nums if hasattr(request, 'image') and request.image else None,
-                use_image_id=request.image.use_image_id if hasattr(request, 'image') and request.image else False,
+                max_slice_nums=request.image.max_slice_nums
+                if hasattr(request, "image") and request.image
+                else None,
+                use_image_id=request.image.use_image_id
+                if hasattr(request, "image") and request.image
+                else False,
             )
-        
+
         # 处理返回值
         # 模型 chat() 返回值（modeling_minicpmo_unified.py）：
         #   - 无音频: answer (str)
         #   - 有音频: (answer, waveform_np)
         #   - return_prompt + 无音频: (answer, prompt)
         #   - return_prompt + 有音频: (answer, prompt, waveform_np)
-        return_prompt_flag = request.return_prompt if hasattr(request, 'return_prompt') else False
-        
+        return_prompt_flag = (
+            request.return_prompt if hasattr(request, "return_prompt") else False
+        )
+
         text_content = None
         prompt = None
         waveform = None
-        
+
         if isinstance(result, tuple):
             if return_prompt_flag:
                 if len(result) == 3:
@@ -422,31 +464,36 @@ class ChatView(MiniCPMOProcessorMixin):
                     text_content = result[0]
         else:
             text_content = result
-        
+
         # 将 waveform numpy array 转为 base64 WAV
         audio_base64 = None
         if waveform is not None:
             try:
                 import io
                 import soundfile as sf_lib
+
                 buf = io.BytesIO()
                 sf_lib.write(buf, waveform, 24000, format="WAV")
                 audio_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-                logger.info(f"TTS 音频生成成功: {len(waveform)} samples, {len(waveform)/24000:.1f}s")
+                logger.info(
+                    f"TTS 音频生成成功: {len(waveform)} samples, {len(waveform) / 24000:.1f}s"
+                )
             except Exception as e:
                 logger.error(f"TTS 音频编码失败: {e}")
-        
+
         duration_ms = (time.time() - start_time) * 1000
-        
+
         # 读取模型存储的 token 统计（model.chat() 内部设置）
-        chat_token_stats = getattr(self._model, '_last_chat_token_stats', {})
-        input_tokens = chat_token_stats.get('input_tokens', 0)
-        generated_tokens = chat_token_stats.get('generated_tokens', 0)
-        
+        chat_token_stats = getattr(self._model, "_last_chat_token_stats", {})
+        input_tokens = chat_token_stats.get("input_tokens", 0)
+        generated_tokens = chat_token_stats.get("generated_tokens", 0)
+
         return ChatResponse(
             text=text_content or "",
             audio_data=audio_base64,
-            audio_path=tts_config.output_path if (tts_config and tts_config.output_path) else None,
+            audio_path=tts_config.output_path
+            if (tts_config and tts_config.output_path)
+            else None,
             audio_sample_rate=24000,
             duration_ms=duration_ms,
             prompt=prompt,
@@ -462,30 +509,30 @@ class ChatView(MiniCPMOProcessorMixin):
 
 class HalfDuplexView(MiniCPMOProcessorMixin):
     """Half-Duplex 模式视图
-    
+
     提供 Half-Duplex 模式专用的 API。
-    
+
     特性：
     - 有状态（session_id + KV Cache 复用）
     - 流式返回（边生成边返回）
     - 支持回溯（speculative_snapshot）
     - 独占 Worker（会话期间）
-    
+
     示例：
         >>> half_duplex = processor.set_half_duplex_mode()
         >>> half_duplex.prefill(request)
         >>> for chunk in half_duplex.generate(session_id):
         ...     print(chunk.text_delta, end="")
     """
-    
+
     def __init__(self, model: "MiniCPMO", ref_audio_path: Optional[str] = None):
         self._model = model
         self.ref_audio_path = ref_audio_path
         self._ref_audio_cache = None
-    
+
     def init_ref_audio(self, ref_audio_path: Optional[str] = None) -> None:
         """初始化参考音频（用于 TTS，从文件路径）
-        
+
         Args:
             ref_audio_path: 参考音频路径
         """
@@ -494,57 +541,60 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
             ref_audio = self._load_ref_audio(path)
             self._model.init_token2wav_cache(prompt_speech_16k=ref_audio)
             logger.info(f"已初始化参考音频: {path}")
-    
+
     def init_ref_audio_from_data(self, ref_audio: np.ndarray) -> None:
         """初始化参考音频（用于 TTS，从 ndarray 数据）
-        
+
         用于前端直接上传 base64 ref audio 的场景，
         无需落盘为文件，直接用 ndarray 初始化 TTS cache。
-        
+
         Args:
             ref_audio: 16kHz mono float32 音频 ndarray
         """
         self._model.init_token2wav_cache(prompt_speech_16k=ref_audio)
-        logger.info(f"已初始化参考音频 (from data, {len(ref_audio)} samples, {len(ref_audio)/16000:.1f}s)")
-    
+        logger.info(
+            f"已初始化参考音频 (from data, {len(ref_audio)} samples, {len(ref_audio) / 16000:.1f}s)"
+        )
+
     def reset_session(self, session_id: str) -> None:
         """重置会话
-        
+
         Args:
             session_id: 会话 ID
         """
         logger.info(f"重置会话: {session_id}")
         self._model.reset_session()
-    
+
     def prefill(self, request: StreamingRequest) -> str:
         """流式预填充（支持多条消息逐条 prefill）
-        
+
         模型的 streaming_prefill 要求每次只处理一条消息（assert len(msgs)==1）。
         本方法将 request.messages 拆分为逐条调用，is_last_chunk 仅在最后一条
         且 request.is_last_chunk=True 时设为 True。
-        
+
         Args:
             request: 流式请求（可包含多条消息）
-            
+
         Returns:
             最后一条消息的 prompt 文本
         """
         prompt = ""
         num_messages = len(request.messages)
-        
+
         for i, msg in enumerate(request.messages):
             content = self._convert_content_to_model_format(msg.content)
             if len(content) == 1 and isinstance(content[0], str):
                 content = content[0]
-            msgs = [{
-                "role": msg.role.value,
-                "content": content
-            }]
-            
+            msgs = [{"role": msg.role.value, "content": content}]
+
             # is_last_chunk 仅在最后一条消息且 request 标记为 last 时为 True
             is_last = request.is_last_chunk and (i == num_messages - 1)
-            
-            max_slice = request.image.max_slice_nums if hasattr(request, 'image') and request.image else None
+
+            max_slice = (
+                request.image.max_slice_nums
+                if hasattr(request, "image") and request.image
+                else None
+            )
             result = self._model.streaming_prefill(
                 session_id=request.session_id,
                 msgs=msgs,
@@ -557,9 +607,9 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
             )
             if result:
                 prompt = result
-        
+
         return prompt
-    
+
     def non_streaming_prefill(
         self,
         session_id: str,
@@ -579,7 +629,7 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
             enable_thinking=enable_thinking,
         )
         return prompt
-    
+
     def generate(
         self,
         session_id: str,
@@ -590,7 +640,7 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
         length_penalty: float = 1.1,
     ) -> Generator[StreamingChunk, None, None]:
         """流式生成
-        
+
         Args:
             session_id: 会话 ID
             generate_audio: 是否生成音频
@@ -598,13 +648,13 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
             do_sample: 是否采样
             enable_speculative_snapshot: 是否启用回溯快照
             length_penalty: 长度惩罚系数（>1.0 抑制 EOS，输出更长；=1.0 不惩罚）
-            
+
         Yields:
             StreamingChunk
         """
         start_time = time.time()
         chunk_index = 0
-        
+
         try:
             iter_gen = self._model.streaming_generate(
                 session_id=session_id,
@@ -615,34 +665,34 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
                 enable_speculative_snapshot=enable_speculative_snapshot,
                 length_penalty=length_penalty,
             )
-            
+
             for item in iter_gen:
                 if item is None:
                     continue
                 if not isinstance(item, (tuple, list)) or len(item) < 2:
                     continue
-                    
+
                 item1, item2 = item[0], item[1]
                 chunk_start = time.time()
-                
+
                 if generate_audio:
                     if item1 is None and item2 is None:
                         continue
-                    
+
                     waveform_chunk = item1
                     text_value = item2 if item2 and isinstance(item2, str) else None
-                    
+
                     audio_data = None
-                    if waveform_chunk is not None and hasattr(waveform_chunk, 'cpu'):
+                    if waveform_chunk is not None and hasattr(waveform_chunk, "cpu"):
                         audio_np = waveform_chunk.cpu().numpy().astype(np.float32)
                         audio_bytes = audio_np.tobytes()
-                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                        audio_data = base64.b64encode(audio_bytes).decode("utf-8")
                 else:
                     text_value = item1 if item1 and isinstance(item1, str) else None
                     audio_data = None
-                
+
                 chunk_duration = (time.time() - chunk_start) * 1000
-                
+
                 yield StreamingChunk(
                     chunk_index=chunk_index,
                     text_delta=text_value,
@@ -651,9 +701,9 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
                     is_final=False,
                     duration_ms=chunk_duration,
                 )
-                
+
                 chunk_index += 1
-            
+
             # 最终块
             total_duration = (time.time() - start_time) * 1000
             yield StreamingChunk(
@@ -663,7 +713,7 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
                 is_final=True,
                 duration_ms=total_duration,
             )
-            
+
         except Exception as e:
             logger.error(f"流式生成失败: {e}")
             yield StreamingChunk(
@@ -674,35 +724,31 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
                 duration_ms=(time.time() - start_time) * 1000,
             )
             raise
-    
+
     def can_rollback(self) -> bool:
         """检查是否可以回溯"""
         return self._model.has_speculative_snapshot()
-    
+
     def rollback(self) -> RollbackResult:
         """回溯到上一个快照点"""
         if not self._model.has_speculative_snapshot():
-            return RollbackResult(
-                success=False,
-                reason="没有可用的快照"
-            )
-        
+            return RollbackResult(success=False, reason="没有可用的快照")
+
         try:
             success = self._model.restore_speculative_snapshot()
             if success:
                 return RollbackResult(
-                    success=True,
-                    restored_position="已恢复到 streaming_generate 调用前"
+                    success=True, restored_position="已恢复到 streaming_generate 调用前"
                 )
             else:
                 return RollbackResult(success=False, reason="恢复失败")
         except Exception as e:
             return RollbackResult(success=False, reason=str(e))
-    
+
     def clear_rollback_point(self) -> None:
         """清除回溯点"""
         self._model.clear_speculative_snapshot()
-    
+
     def complete_turn(
         self,
         session_id: str,
@@ -713,25 +759,25 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
         length_penalty: float = 1.1,
     ) -> StreamingResponse:
         """完成一轮对话（便捷方法）
-        
+
         封装 prefill + generate 流程，自动累加增量文本和音频。
         适用于不需要实时流式输出的场景。
-        
+
         Args:
             session_id: 会话 ID
             messages: 消息列表（可以包含多条，会逐条 prefill）
             generate_audio: 是否生成音频
             max_new_tokens: 最大生成 token 数
             output_audio_path: 可选，自动保存音频的路径
-            
+
         Returns:
             StreamingResponse: 包含完整文本和音频的响应
-            
+
         示例：
             >>> half_duplex = processor.set_half_duplex_mode()
             >>> half_duplex.reset_session("user_001")
             >>> half_duplex.init_ref_audio("/path/to/ref.wav")
-            >>> 
+            >>>
             >>> response = streaming.complete_turn(
             ...     session_id="user_001",
             ...     messages=[
@@ -745,24 +791,26 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
             >>> print(f"音频时长: {response.audio_duration_ms}ms")
         """
         # StreamingRequest, StreamingResponse, Role, Message 已在顶层导入
-        
+
         start_time = time.time()
-        
+
         # 逐条 prefill 消息
         for i, msg in enumerate(messages):
-            is_last = (i == len(messages) - 1)
-            self.prefill(StreamingRequest(
-                session_id=session_id,
-                messages=[msg],
-                use_tts_template=True,
-                is_last_chunk=is_last,
-            ))
-        
+            is_last = i == len(messages) - 1
+            self.prefill(
+                StreamingRequest(
+                    session_id=session_id,
+                    messages=[msg],
+                    use_tts_template=True,
+                    is_last_chunk=is_last,
+                )
+            )
+
         # 生成并累加结果
         full_text = ""
         audio_chunks: List[np.ndarray] = []
         chunk_count = 0
-        
+
         for chunk in self.generate(
             session_id=session_id,
             generate_audio=generate_audio,
@@ -770,36 +818,37 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
             length_penalty=length_penalty,
         ):
             chunk_count += 1
-            
+
             # 累加增量文本
             if chunk.text_delta:
                 full_text += chunk.text_delta
-            
+
             # 收集音频块
             if chunk.audio_data:
                 audio_bytes = base64.b64decode(chunk.audio_data)
                 audio_np = np.frombuffer(audio_bytes, dtype=np.float32)
                 if audio_np.size > 0:
                     audio_chunks.append(audio_np)
-        
+
         # 合并音频
         audio_data_base64 = None
         audio_duration_ms = None
         if audio_chunks:
             full_audio = np.concatenate(audio_chunks)
             audio_duration_ms = len(full_audio) / 24000 * 1000
-            
+
             # 保存音频文件（如果指定）
             if output_audio_path:
                 import soundfile as sf
+
                 sf.write(output_audio_path, full_audio, 24000)
                 logger.info(f"音频已保存: {output_audio_path}")
-            
+
             # 转为 Base64
-            audio_data_base64 = base64.b64encode(full_audio.tobytes()).decode('utf-8')
-        
+            audio_data_base64 = base64.b64encode(full_audio.tobytes()).decode("utf-8")
+
         total_duration_ms = (time.time() - start_time) * 1000
-        
+
         return StreamingResponse(
             success=True,
             session_id=session_id,
@@ -815,23 +864,23 @@ class HalfDuplexView(MiniCPMOProcessorMixin):
 
 class DuplexView:
     """Duplex 模式视图
-    
+
     提供 Duplex 模式专用的 API。
-    
+
     特性：
     - 全双工实时对话
     - 支持打断
     - Listen/Speak 状态管理
-    
+
     示例：
         >>> duplex = processor.set_duplex_mode()
         >>> duplex.prepare(system_prompt_text="你是助手")
         >>> duplex.prefill(audio_waveform=chunk)
         >>> result = duplex.generate()
     """
-    
+
     def __init__(
-        self, 
+        self,
         model: "MiniCPMO",
         ref_audio_path: Optional[str] = None,
         config: Optional[DuplexConfig] = None,
@@ -840,25 +889,25 @@ class DuplexView:
         self.ref_audio_path = ref_audio_path
         self.config = config or DuplexConfig()
         self._ref_audio_cache: Optional[np.ndarray] = None
-    
+
     def _load_ref_audio(self, path: Optional[str] = None) -> np.ndarray:
         """加载参考音频"""
         import librosa
-        
+
         audio_path = path or self.ref_audio_path
         if audio_path is None:
             raise ValueError("未提供参考音频路径")
-        
+
         if self._ref_audio_cache is not None and path is None:
             return self._ref_audio_cache
-        
+
         audio, _ = librosa.load(audio_path, sr=16000, mono=True)
-        
+
         if path is None:
             self._ref_audio_cache = audio
-        
+
         return audio
-    
+
     def prepare(
         self,
         system_prompt_text: Optional[str] = None,
@@ -866,26 +915,28 @@ class DuplexView:
         prompt_wav_path: Optional[str] = None,
     ) -> str:
         """准备双工会话
-        
+
         Args:
             system_prompt_text: 系统提示文本
             ref_audio_path: 参考音频路径
             prompt_wav_path: TTS prompt 音频路径
-            
+
         Returns:
             完整的 system prompt 字符串
         """
         if system_prompt_text is None:
             system_prompt_text = "Streaming Omni Conversation."
-        
-        prefix_system_prompt = f"<|im_start|>system\n{system_prompt_text}\n<|audio_start|>"
+
+        prefix_system_prompt = (
+            f"<|im_start|>system\n{system_prompt_text}\n<|audio_start|>"
+        )
         suffix_system_prompt = "<|audio_end|><|im_end|>"
-        
+
         # 加载参考音频
         ref_audio = None
         if ref_audio_path or self.ref_audio_path:
             ref_audio = self._load_ref_audio(ref_audio_path)
-        
+
         # 调用透传方法
         prompt = self._model.duplex_prepare(
             prefix_system_prompt=prefix_system_prompt,
@@ -893,10 +944,10 @@ class DuplexView:
             ref_audio=ref_audio,
             prompt_wav_path=prompt_wav_path or ref_audio_path or self.ref_audio_path,
         )
-        
+
         logger.info(f"双工会话准备完成")
         return prompt
-    
+
     def prefill(
         self,
         audio_waveform: Optional[np.ndarray] = None,
@@ -905,35 +956,35 @@ class DuplexView:
         max_slice_nums: int = 1,
     ) -> dict:
         """预填充用户音频
-        
+
         Args:
             audio_waveform: 音频波形数据（16kHz mono）
             audio_path: 音频文件路径
             frame_list: 图像帧列表
             max_slice_nums: HD 图像切片数
-            
+
         Returns:
             预填充结果 dict
         """
         import librosa
-        
+
         if audio_path and audio_waveform is None:
             audio_waveform, _ = librosa.load(audio_path, sr=16000, mono=True)
-        
+
         result = self._model.duplex_prefill(
             audio_waveform=audio_waveform,
             frame_list=frame_list,
             max_slice_nums=max_slice_nums,
         )
-        
+
         return result
-    
+
     def generate(self, force_listen: bool = False) -> DuplexGenerateResult:
         """生成响应
-        
+
         Args:
             force_listen: 前端 Force Listen 开关，强制本次生成为 listen
-            
+
         Returns:
             DuplexGenerateResult
         """
@@ -949,7 +1000,7 @@ class DuplexView:
             length_penalty=self.config.length_penalty,
             force_listen_override=force_listen,
         )
-        
+
         # 转换音频
         audio_data = None
         if result.get("audio_waveform") is not None:
@@ -957,26 +1008,36 @@ class DuplexView:
             if isinstance(waveform, torch.Tensor):
                 waveform = waveform.cpu().numpy()
             audio_bytes = waveform.astype(np.float32).tobytes()
-            audio_data = base64.b64encode(audio_bytes).decode('utf-8')
-        
+            audio_data = base64.b64encode(audio_bytes).decode("utf-8")
+
         return DuplexGenerateResult(
             is_listen=result.get("is_listen", True),
             text=result.get("text", ""),
             audio_data=audio_data,
             end_of_turn=result.get("end_of_turn", False),
             current_time=result.get("current_time", 0),
-            cost_llm_ms=result.get("cost_llm", 0) * 1000 if result.get("cost_llm") else None,
-            cost_tts_prep_ms=result.get("cost_tts_prep", 0) * 1000 if result.get("cost_tts_prep") else None,
-            cost_tts_ms=result.get("cost_tts", 0) * 1000 if result.get("cost_tts") else None,
-            cost_token2wav_ms=result.get("cost_token2wav", 0) * 1000 if result.get("cost_token2wav") else None,
-            cost_all_ms=result.get("cost_all", 0) * 1000 if result.get("cost_all") else None,
+            cost_llm_ms=result.get("cost_llm", 0) * 1000
+            if result.get("cost_llm")
+            else None,
+            cost_tts_prep_ms=result.get("cost_tts_prep", 0) * 1000
+            if result.get("cost_tts_prep")
+            else None,
+            cost_tts_ms=result.get("cost_tts", 0) * 1000
+            if result.get("cost_tts")
+            else None,
+            cost_token2wav_ms=result.get("cost_token2wav", 0) * 1000
+            if result.get("cost_token2wav")
+            else None,
+            cost_all_ms=result.get("cost_all", 0) * 1000
+            if result.get("cost_all")
+            else None,
             n_tokens=result.get("n_tokens"),
             n_tts_tokens=result.get("n_tts_tokens"),
         )
-    
+
     def finalize(self) -> None:
         """完成 generate 的延迟操作（feed 终止符 + </unit>，滑窗维护）
-        
+
         必须在 generate() 之后、下一次 prefill() 之前调用。
         可异步调度：先返回结果给前端，再在后台执行 finalize。
         """
@@ -986,35 +1047,35 @@ class DuplexView:
         """设置打断信号"""
         self._model.duplex_set_break()
         logger.info("设置打断信号")
-    
+
     def clear_break(self) -> None:
         """清除打断信号"""
         self._model.duplex_clear_break()
-    
+
     def stop(self) -> None:
         """停止当前会话"""
         self._model.duplex_stop()
         logger.info("会话已停止")
-    
+
     def is_break_set(self) -> bool:
         """检查是否设置了打断"""
         return self._model.duplex_is_break_set()
-    
+
     def is_stopped(self) -> bool:
         """检查会话是否已停止"""
         return self._model.duplex_is_stopped()
-    
+
     def cleanup(self) -> None:
         """清理 Duplex 会话资源，释放 GPU 显存
-        
+
         在会话结束后调用（stop 之后），释放所有 Duplex 相关的 GPU 资源，
         使显存恢复到模型刚加载时的状态。
-        
+
         释放的资源包括：
         - Duplex KV cache（decoder.cache）— ~660 MB
         - TTS audio_tokenizer live caches（stream_cache, hift_cache_dict）— ~820 MB
         - 模型级 session 状态（token2wav_cache 等）— ~66 MB
-        
+
         注意：
         - 此方法不调用 gc.collect() 和 torch.cuda.empty_cache()，
           调用方应在此方法之后自行调用以确保显存回收到 CUDA driver。
@@ -1022,43 +1083,45 @@ class DuplexView:
         - cleanup 后也可以正常切换到 Chat/Streaming 模式。
         """
         model = self._model
-        
+
         # Step 1: 重置 DuplexCapability 状态（释放 KV cache、TTS past_key_values 等）
-        if hasattr(model, 'duplex') and model.duplex is not None:
+        if hasattr(model, "duplex") and model.duplex is not None:
             model.duplex._reset_streaming_state()
             model.duplex.decoder.reset()
-        
+
         # Step 2: 清理 TTS audio_tokenizer 的 live caches（最大泄漏源）
-        if hasattr(model, 'tts') and hasattr(model.tts, 'audio_tokenizer'):
+        if hasattr(model, "tts") and hasattr(model.tts, "audio_tokenizer"):
             tokenizer = model.tts.audio_tokenizer
-            for attr in ('stream_cache', 'hift_cache_dict', 'cache'):
+            for attr in ("stream_cache", "hift_cache_dict", "cache"):
                 if hasattr(tokenizer, attr) and getattr(tokenizer, attr) is not None:
                     setattr(tokenizer, attr, None)
-        
+
         # Step 3: 重置模型级 session 状态
         model.reset_session(reset_token2wav_cache=True)
-        
+
         logger.info("Duplex 会话资源已清理")
-    
-    def offline_inference(self, task_input: "DuplexOfflineInput") -> "DuplexOfflineOutput":
+
+    def offline_inference(
+        self, task_input: "DuplexOfflineInput"
+    ) -> "DuplexOfflineOutput":
         """离线推理（便捷方法）
-        
+
         对完整音频文件进行离线推理，一站式处理。
-        
+
         适用场景：
         - 单元测试
         - 离线批量处理
         - 演示场景
-        
+
         注意：这不是实时双工会话，而是对完整音频文件的离线处理。
         实时双工请直接使用 prepare/prefill/generate 原语。
-        
+
         Args:
             task_input: 离线推理输入
-            
+
         Returns:
             离线推理输出
-        
+
         示例：
             >>> output = duplex.offline_inference(DuplexOfflineInput(
             ...     system_prompt="你是一个友好的助手。",
@@ -1067,86 +1130,97 @@ class DuplexView:
             ... ))
             >>> print(output.full_text)
         """
-        from core.schemas.duplex import DuplexOfflineInput, DuplexOfflineOutput, DuplexChunkResult
+        from core.schemas.duplex import (
+            DuplexOfflineInput,
+            DuplexOfflineOutput,
+            DuplexChunkResult,
+        )
         import librosa
-        
+
         start_time = time.time()
         chunks = []
         full_text = ""
         audio_chunks = []
-        
+
         try:
             # 准备会话
             self.prepare(
                 system_prompt_text=task_input.system_prompt,
                 ref_audio_path=task_input.ref_audio_path,
             )
-            
+
             # 加载用户音频并分块
             if task_input.user_audio_path:
                 user_audio, _ = librosa.load(
-                    task_input.user_audio_path, 
-                    sr=task_input.config.sample_rate, 
-                    mono=True
+                    task_input.user_audio_path,
+                    sr=task_input.config.sample_rate,
+                    mono=True,
                 )
-                chunk_samples = task_input.config.sample_rate * task_input.config.chunk_ms // 1000
+                chunk_samples = (
+                    task_input.config.sample_rate * task_input.config.chunk_ms // 1000
+                )
                 num_chunks = (len(user_audio) + chunk_samples - 1) // chunk_samples
-                
+
                 for i in range(num_chunks):
                     chunk_start = time.time()
-                    
+
                     # 获取音频块
                     start_idx = i * chunk_samples
                     end_idx = min(start_idx + chunk_samples, len(user_audio))
                     audio_chunk = user_audio[start_idx:end_idx]
-                    
+
                     # 如果不足一个块，补零
                     if len(audio_chunk) < chunk_samples:
-                        audio_chunk = np.pad(audio_chunk, (0, chunk_samples - len(audio_chunk)))
-                    
+                        audio_chunk = np.pad(
+                            audio_chunk, (0, chunk_samples - len(audio_chunk))
+                        )
+
                     # 获取图像帧（如果有）
                     # [CRITICAL] 必须传 PIL Image，不能是 numpy array（否则内存激增 18GB）
                     frame_list = None
                     if task_input.image_paths and i < len(task_input.image_paths):
                         from PIL import Image
+
                         frame = Image.open(task_input.image_paths[i]).convert("RGB")
                         frame_list = [frame]  # PIL Image, NOT np.array(frame)
-                    
+
                     # 预填充
                     self.prefill(audio_waveform=audio_chunk, frame_list=frame_list)
-                    
+
                     # 生成
                     result = self.generate()
 
                     self.finalize()
 
                     chunk_elapsed = (time.time() - chunk_start) * 1000
-                    
+
                     # 记录结果
-                    chunks.append(DuplexChunkResult(
-                        chunk_idx=i,
-                        phase="user",
-                        is_listen=result.is_listen,
-                        text=result.text,
-                        has_audio=result.audio_data is not None,
-                        audio_data=result.audio_data,  # 保存音频数据
-                        end_of_turn=result.end_of_turn,
-                        elapsed_ms=chunk_elapsed,
-                    ))
-                    
+                    chunks.append(
+                        DuplexChunkResult(
+                            chunk_idx=i,
+                            phase="user",
+                            is_listen=result.is_listen,
+                            text=result.text,
+                            has_audio=result.audio_data is not None,
+                            audio_data=result.audio_data,  # 保存音频数据
+                            end_of_turn=result.end_of_turn,
+                            elapsed_ms=chunk_elapsed,
+                        )
+                    )
+
                     if not result.is_listen:
                         full_text += result.text
                         if result.audio_data:
                             audio_chunks.append(result.audio_data)
-                    
+
                     if result.end_of_turn:
                         break
-            
+
             # 停止会话
             self.stop()
-            
+
             total_duration = (time.time() - start_time) * 1000
-            
+
             return DuplexOfflineOutput(
                 success=True,
                 full_text=full_text,
@@ -1155,7 +1229,7 @@ class DuplexView:
                 total_duration_ms=total_duration,
                 chunks=chunks,
             )
-            
+
         except Exception as e:
             logger.error(f"离线推理失败: {e}")
             return DuplexOfflineOutput(
@@ -1168,6 +1242,7 @@ class DuplexView:
 # ============================================================
 # UnifiedProcessor：统一入口
 # ============================================================
+
 
 class UnifiedProcessor(BaseProcessor):
     """Unified processor — load once, hot-switch between Chat/Streaming/Duplex.
@@ -1214,6 +1289,7 @@ class UnifiedProcessor(BaseProcessor):
         compile: bool = False,
         chat_vocoder: str = "token2wav",
         attn_implementation: str = "auto",
+        mmproj_path: Optional[str] = None,
     ):
         """Initialize the unified processor.
 
@@ -1229,8 +1305,10 @@ class UnifiedProcessor(BaseProcessor):
             chat_vocoder: Chat mode vocoder ("token2wav" or "cosyvoice2").
             attn_implementation: Attention implementation
                 ("auto" / "flash_attention_2" / "sdpa" / "eager").
+            mmproj_path: Optional path to mmproj file for vision.
         """
         self.pt_path = pt_path
+        self.mmproj_path = mmproj_path
         self.ref_audio_path = ref_audio_path
         self.duplex_config = duplex_config or DuplexConfig()
         self.preload_both_tts = preload_both_tts
@@ -1271,6 +1349,7 @@ class UnifiedProcessor(BaseProcessor):
             if configured == "flash_attention_2":
                 try:
                     from transformers.utils import is_flash_attn_2_available
+
                     if not is_flash_attn_2_available():
                         raise RuntimeError(
                             "config.json specifies attn_implementation='flash_attention_2', "
@@ -1290,6 +1369,7 @@ class UnifiedProcessor(BaseProcessor):
         # Auto mode: detect flash-attn availability
         try:
             from transformers.utils import is_flash_attn_2_available
+
             flash_available = is_flash_attn_2_available()
         except ImportError:
             flash_available = False
@@ -1297,6 +1377,7 @@ class UnifiedProcessor(BaseProcessor):
         if flash_available:
             try:
                 import flash_attn
+
                 flash_version = flash_attn.__version__
             except (ImportError, AttributeError):
                 flash_version = "unknown"
@@ -1325,6 +1406,7 @@ class UnifiedProcessor(BaseProcessor):
             return False
         try:
             import json as _json
+
             with open(config_file, "r", encoding="utf-8") as f:
                 cfg = _json.load(f)
             qcfg = cfg.get("quantization_config")
@@ -1345,7 +1427,7 @@ class UnifiedProcessor(BaseProcessor):
             logger.info(f"Extra weights: {self.pt_path}")
         start = time.time()
 
-        from MiniCPMO45.modeling_minicpmo_unified import MiniCPMO, ProcessorMode as ModelProcessorMode
+        from oka.minicpmo import MiniCPMO, ProcessorMode as ModelProcessorMode
 
         # Resolve attention implementation (auto-detect when set to "auto")
         resolved_attn = self._resolve_attn_implementation()
@@ -1359,6 +1441,7 @@ class UnifiedProcessor(BaseProcessor):
             self.model_path,
             trust_remote_code=True,
             _attn_implementation=resolved_attn,
+            mmproj_path=getattr(self, "mmproj_path", None),
         )
 
         if is_quantized:
@@ -1411,7 +1494,9 @@ class UnifiedProcessor(BaseProcessor):
             # AWQ: skip llm.model (custom INT4 kernels incompatible with compile),
             # but still compile vpm / resampler / tts.model (all float, full benefit).
             skip = ["llm.model"] if is_quantized else None
-            self.model.apply_torch_compile(mode="default", dynamic=True, skip_modules=skip)
+            self.model.apply_torch_compile(
+                mode="default", dynamic=True, skip_modules=skip
+            )
             self.model.warmup_compile(ref_audio_path=self.ref_audio_path)
             compile_time = time.time() - compile_start
             logger.info(f"torch.compile + warmup done in {compile_time:.1f}s")
@@ -1419,7 +1504,9 @@ class UnifiedProcessor(BaseProcessor):
         # Create View instances
         self._chat_view = ChatView(self.model, self.ref_audio_path)
         self._half_duplex_view = HalfDuplexView(self.model, self.ref_audio_path)
-        self._duplex_view = DuplexView(self.model, self.ref_audio_path, self.duplex_config)
+        self._duplex_view = DuplexView(
+            self.model, self.ref_audio_path, self.duplex_config
+        )
 
         total_time = time.time() - start
         logger.info(f"UnifiedProcessor initialization complete in {total_time:.1f}s")
@@ -1445,14 +1532,16 @@ class UnifiedProcessor(BaseProcessor):
         Returns:
             ChatView instance.
         """
-        from MiniCPMO45.modeling_minicpmo_unified import ProcessorMode as ModelProcessorMode
+        from oka.minicpmo import ProcessorMode as ModelProcessorMode
 
         if self._current_mode != ProcessorMode.CHAT:
             start = time.time()
             self._sync_compile_state(False)
             self.model.set_mode(ModelProcessorMode.CHAT)
             self._current_mode = ProcessorMode.CHAT
-            logger.info(f"Switched to CHAT mode in {(time.time()-start)*1000:.1f}ms")
+            logger.info(
+                f"Switched to CHAT mode in {(time.time() - start) * 1000:.1f}ms"
+            )
 
         return self._chat_view
 
@@ -1462,14 +1551,16 @@ class UnifiedProcessor(BaseProcessor):
         Returns:
             HalfDuplexView instance.
         """
-        from MiniCPMO45.modeling_minicpmo_unified import ProcessorMode as ModelProcessorMode
+        from oka.minicpmo import ProcessorMode as ModelProcessorMode
 
         if self._current_mode != ProcessorMode.HALF_DUPLEX:
             start = time.time()
             self._sync_compile_state(False)
             self.model.set_mode(ModelProcessorMode.STREAMING)
             self._current_mode = ProcessorMode.HALF_DUPLEX
-            logger.info(f"Switched to HALF_DUPLEX mode in {(time.time()-start)*1000:.1f}ms")
+            logger.info(
+                f"Switched to HALF_DUPLEX mode in {(time.time() - start) * 1000:.1f}ms"
+            )
 
         return self._half_duplex_view
 
@@ -1479,14 +1570,16 @@ class UnifiedProcessor(BaseProcessor):
         Returns:
             DuplexView instance.
         """
-        from MiniCPMO45.modeling_minicpmo_unified import ProcessorMode as ModelProcessorMode
+        from oka.minicpmo import ProcessorMode as ModelProcessorMode
 
         if self._current_mode != ProcessorMode.DUPLEX:
             start = time.time()
             self._sync_compile_state(True)
             self.model.set_mode(ModelProcessorMode.DUPLEX)
             self._current_mode = ProcessorMode.DUPLEX
-            logger.info(f"Switched to DUPLEX mode in {(time.time()-start)*1000:.1f}ms")
+            logger.info(
+                f"Switched to DUPLEX mode in {(time.time() - start) * 1000:.1f}ms"
+            )
 
         return self._duplex_view
 
@@ -1508,14 +1601,20 @@ class UnifiedProcessor(BaseProcessor):
         if self.model is None:
             return 0
         # Duplex mode uses the DuplexCapability's internal decoder cache
-        if (self._current_mode == ProcessorMode.DUPLEX
-                and hasattr(self.model, 'duplex')
-                and self.model.duplex is not None
-                and hasattr(self.model.duplex, 'decoder')):
+        if (
+            self._current_mode == ProcessorMode.DUPLEX
+            and hasattr(self.model, "duplex")
+            and self.model.duplex is not None
+            and hasattr(self.model.duplex, "decoder")
+        ):
             length = self.model.duplex.decoder.get_cache_length()
             if length == 0:
                 decoder = self.model.duplex.decoder
-                cache_type = type(decoder.cache).__name__ if decoder.cache is not None else "None"
+                cache_type = (
+                    type(decoder.cache).__name__
+                    if decoder.cache is not None
+                    else "None"
+                )
                 logger.warning(
                     f"[kv_cache_length] Duplex decoder.get_cache_length() returned 0: "
                     f"cache_type={cache_type}, cache is None={decoder.cache is None}"
