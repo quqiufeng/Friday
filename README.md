@@ -513,4 +513,120 @@ netsh interface portproxy add v4tov4 listenport=10024 connectport=10024 connecta
 
 ---
 
+## 9. llama.cpp-omni 全双工部署 (WebRTC Demo)
+
+> 基于 llama.cpp-omni + WebRTC 实现全双工实时视频交互，支持量化版本
+
+### 9.1 硬件要求
+
+| 显卡 | 显存 | 单工 | 双工 | 说明 |
+|------|------|------|------|------|
+| RTX 4060 | 8GB | ❌ | ❌ | 显存不足 |
+| RTX 3060 | 12GB | ✅ | ⚠️ 勉强 | 部分模块需 CPU offload |
+| RTX 4070 | 12GB | ✅ | ✅ | 双工入门级 |
+| RTX 4080 | 16GB | ✅ | ✅ | 推荐配置 |
+| RTX 3090/4090 | 24GB | ✅ | ✅ | 充裕/最佳 |
+
+**3080 10GB**: 不在官方支持列表，可尝试
+
+### 9.2 模型文件 (~8.3GB)
+
+```
+<MODEL_DIR>/
+├── MiniCPM-o-4_5-Q4_K_M.gguf        # LLM 主模型 (~5GB)
+├── audio/
+│   └── MiniCPM-o-4_5-audio-F16.gguf  # 音频编码器
+├── vision/
+│   └── MiniCPM-o-4_5-vision-F16.gguf # 视觉编码器
+├── tts/
+│   ├── MiniCPM-o-4_5-tts-F16.gguf    # TTS 模型
+│   └── MiniCPM-o-4_5-projector-F16.gguf
+└── token2wav-gguf/                   # Token2Wav 模型
+    ├── encoder.gguf
+    ├── flow_matching.gguf
+    ├── flow_extra.gguf
+    ├── hifigan2.gguf
+    └── prompt_cache.gguf
+```
+
+### 9.3 部署步骤
+
+#### 步骤 1: 克隆项目
+
+```bash
+git clone https://github.com/tc-mb/llama.cpp-omni.git
+cd llama.cpp-omni
+```
+
+#### 步骤 2: 编译 (CUDA 支持)
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON
+cmake --build build --target llama-server -j
+```
+
+验证编译:
+```bash
+ls -la build/bin/llama-server
+```
+
+#### 步骤 3: 下载模型 (~8.3GB)
+
+```bash
+cd /home/dministrator/Friday/WebRTC_Demo
+
+# 使用 HuggingFace 镜像 (国内推荐)
+./download_models.sh --model-dir /opt/image/MiniCPM-o-4_5-GGUF --hf-mirror https://hf-mirror.com
+
+# 或使用 ModelScope (国内更快)
+./download_models.sh --model-dir /opt/image/MiniCPM-o-4_5-GGUF --source ms
+```
+
+#### 步骤 4: 一键启动
+
+```bash
+cd /home/dministrator/Friday/WebRTC_Demo
+
+# 单工模式
+./deploy_all.sh \
+    --cpp-dir /path/to/llama.cpp-omni \
+    --model-dir /opt/image/MiniCPM-o-4_5-GGUF
+
+# 双工模式
+./deploy_all.sh \
+    --cpp-dir /path/to/llama.cpp-omni \
+    --model-dir /opt/image/MiniCPM-o-4_5-GGUF \
+    --duplex
+```
+
+#### 步骤 5: 访问
+
+启动完成后浏览器打开: **https://localhost:8088**
+
+### 9.4 服务端口
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| Frontend | 3000/8088 | Web UI |
+| Backend | 8025 | 后端 API |
+| LiveKit | 7880 | 实时通信 |
+| Inference | 9060 | C++ HTTP API |
+
+### 9.5 量化版本选择
+
+可选 LLM 量化: `Q4_0`, `Q4_1`, `Q4_K_M` (推荐), `Q4_K_S`, `Q5_0`, `Q5_1`, `Q5_K_M`, `Q5_K_S`, `Q6_K`, `Q8_0`, `F16`
+
+下载时指定:
+```bash
+./download_models.sh --model-dir /opt/image/MiniCPM-o-4_5-GGUF --quant Q4_K_M
+```
+
+### 9.6 相关资源
+
+- [llama.cpp-omni](https://github.com/tc-mb/llama.cpp-omni)
+- [WebRTC Demo 文档](https://github.com/OpenSQZ/MiniCPM-V-CookBook/blob/main/demo/web_demo/WebRTC_Demo/README_zh.md)
+- [MiniCPM-o 4.5 模型](https://huggingface.co/openbmb/MiniCPM-o-4_5)
+
+---
+
 **这就是你的贾维斯 - 随时随地为你服务的 AI 助手！** 🤖
