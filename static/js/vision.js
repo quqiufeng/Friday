@@ -1,6 +1,6 @@
 /**
- * 摄像头/视觉处理模块
- * 负责摄像头控制、截图、图片处理
+ * 视觉处理模块
+ * 负责摄像头控制、图片处理
  */
 
 class VisionManager {
@@ -15,9 +15,6 @@ class VisionManager {
         this.capturedImage = null;
     }
 
-    /**
-     * 切换摄像头状态
-     */
     async toggleCamera() {
         if (this.isCameraOn) {
             await this.stopCamera();
@@ -26,9 +23,6 @@ class VisionManager {
         }
     }
 
-    /**
-     * 启动摄像头
-     */
     async startCamera() {
         try {
             this.stream = await navigator.mediaDevices.getUserMedia({
@@ -55,9 +49,6 @@ class VisionManager {
         }
     }
 
-    /**
-     * 停止摄像头
-     */
     async stopCamera() {
         if (this.stream) {
             this.stream.getTracks().forEach(track => track.stop());
@@ -72,9 +63,6 @@ class VisionManager {
         console.log('📷 摄像头已关闭');
     }
 
-    /**
-     * 截图
-     */
     captureImage() {
         if (!this.isCameraOn) {
             console.warn('摄像头未启动');
@@ -88,19 +76,14 @@ class VisionManager {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, canvas.width, canvas.height);
         
-        // 压缩图片
         const base64Image = canvas.toDataURL('image/jpeg', 0.8);
         this.capturedImage = base64Image.split(',')[1];
         
-        // 显示预览
         this.showImagePreview(base64Image);
         
         return this.capturedImage;
     }
 
-    /**
-     * 从文件加载图片
-     */
     async loadImageFromFile(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -108,7 +91,6 @@ class VisionManager {
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
-                    // 压缩图片
                     const canvas = document.createElement('canvas');
                     const maxSize = 1024;
                     let width = img.width;
@@ -135,7 +117,6 @@ class VisionManager {
                     const base64Image = canvas.toDataURL('image/jpeg', 0.8);
                     this.capturedImage = base64Image.split(',')[1];
                     
-                    // 显示预览
                     this.showImagePreview(base64Image);
                     
                     resolve(this.capturedImage);
@@ -150,37 +131,24 @@ class VisionManager {
         });
     }
 
-    /**
-     * 显示图片预览
-     */
     showImagePreview(base64Url) {
         this.previewImg.src = base64Url;
         this.imagePreview.style.display = 'block';
     }
 
-    /**
-     * 清除图片
-     */
     clearImage() {
         this.capturedImage = null;
         this.previewImg.src = '';
         this.imagePreview.style.display = 'none';
     }
 
-    /**
-     * 获取当前图片
-     */
     getCurrentImage() {
         return this.capturedImage;
     }
 
-    /**
-     * 检查是否有图片
-     */
     hasImage() {
         return !!this.capturedImage;
     }
 }
 
-// 创建全局实例
 window.visionManager = new VisionManager();

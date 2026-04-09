@@ -1,10 +1,8 @@
 /**
  * 主应用逻辑
- * 整合音频、视觉、WebSocket 模块
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM 元素
     const micBtn = document.getElementById('micBtn');
     const sendBtn = document.getElementById('sendBtn');
     const textInput = document.getElementById('textInput');
@@ -15,14 +13,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const imageInput = document.getElementById('imageInput');
     const clearImage = document.getElementById('clearImage');
 
-    // 状态
     let isRecording = false;
     let isProcessing = false;
 
-    // 初始化 WebSocket
     window.wsManager.connect();
 
-    // 注册 WebSocket 消息处理器
     window.wsManager.on('connected', () => {
         console.log('WebSocket 已连接，可以开始对话');
     });
@@ -34,14 +29,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.wsManager.on('audio_response', async (message) => {
-        // 播放语音回复
         if (message.audio) {
             await window.audioManager.playAudio(message.audio);
         }
     });
 
     window.wsManager.on('asr_result', (message) => {
-        // 显示语音识别结果
         if (message.text) {
             textInput.value = message.text;
             textInput.style.height = 'auto';
@@ -49,26 +42,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ============ 事件绑定 ============
-
-    // 麦克风按钮
     micBtn.addEventListener('click', async () => {
         if (isRecording) {
-            // 停止录音
             const audioData = await window.audioManager.stopRecording();
             isRecording = false;
             micBtn.classList.remove('active');
             voiceVisualizer.style.display = 'none';
 
             if (audioData) {
-                // 发送语音
                 window.wsManager.sendAudio(audioData);
                 addMessage('user', '🎤 语音消息');
                 isProcessing = true;
                 updateUIState();
             }
         } else {
-            // 开始录音
             const success = await window.audioManager.startRecording();
             if (success) {
                 isRecording = true;
@@ -78,10 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 发送按钮
     sendBtn.addEventListener('click', sendMessage);
 
-    // 文本输入框 - 回车发送
     textInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -89,23 +74,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 文本输入框 - 自动调整高度
     textInput.addEventListener('input', () => {
         textInput.style.height = 'auto';
         textInput.style.height = textInput.scrollHeight + 'px';
     });
 
-    // 摄像头按钮
     toggleCamera.addEventListener('click', () => {
         window.visionManager.toggleCamera();
     });
 
-    // 上传图片按钮
     uploadBtn.addEventListener('click', () => {
         imageInput.click();
     });
 
-    // 图片选择
     imageInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -113,37 +94,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 清除图片
     clearImage.addEventListener('click', () => {
         window.visionManager.clearImage();
         imageInput.value = '';
     });
 
-    // ============ 功能函数 ============
-
-    /**
-     * 发送消息
-     */
     function sendMessage() {
         const text = textInput.value.trim();
         if (!text && !window.visionManager.hasImage()) return;
         if (isProcessing) return;
 
-        // 获取图片
         const imageData = window.visionManager.getCurrentImage();
 
         if (imageData) {
-            // 发送图片+文本
             window.wsManager.sendImage(imageData, text);
             addMessage('user', text || '📷 图片');
             window.visionManager.clearImage();
         } else {
-            // 发送纯文本
             window.wsManager.sendText(text);
             addMessage('user', text);
         }
 
-        // 清空输入
         textInput.value = '';
         textInput.style.height = 'auto';
 
@@ -151,17 +122,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateUIState();
     }
 
-    /**
-     * 添加消息到聊天窗口
-     */
     function addMessage(role, text) {
-        // 隐藏欢迎消息
         const welcomeMsg = chatContainer.querySelector('.welcome-message');
         if (welcomeMsg) {
             welcomeMsg.style.display = 'none';
         }
 
-        // 创建消息元素
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
 
@@ -177,14 +143,9 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.appendChild(content);
 
         chatContainer.appendChild(messageDiv);
-
-        // 滚动到底部
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    /**
-     * 更新 UI 状态
-     */
     function updateUIState() {
         sendBtn.disabled = isProcessing;
         micBtn.disabled = isProcessing;
@@ -202,6 +163,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 初始化
     console.log('🚀 Friday AI 助手已启动');
 });

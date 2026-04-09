@@ -1,6 +1,5 @@
 /**
  * WebSocket 通信模块
- * 负责与后端实时通信
  */
 
 class WebSocketManager {
@@ -14,9 +13,6 @@ class WebSocketManager {
         this.connectionStatusEl = document.getElementById('connectionStatus');
     }
 
-    /**
-     * 连接 WebSocket
-     */
     connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/chat`;
@@ -32,8 +28,6 @@ class WebSocketManager {
                 this.isConnected = true;
                 this.reconnectAttempts = 0;
                 this.updateStatus('connected', '已连接');
-                
-                // 触发连接成功事件
                 this.emit('connected');
             };
             
@@ -55,8 +49,6 @@ class WebSocketManager {
                 console.log('🔌 WebSocket 已断开');
                 this.isConnected = false;
                 this.updateStatus('disconnected', '已断开');
-                
-                // 尝试重连
                 this.attemptReconnect();
             };
             
@@ -67,9 +59,6 @@ class WebSocketManager {
         }
     }
 
-    /**
-     * 尝试重连
-     */
     attemptReconnect() {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.error('重连次数已达上限');
@@ -85,9 +74,6 @@ class WebSocketManager {
         }, this.reconnectDelay);
     }
 
-    /**
-     * 断开连接
-     */
     disconnect() {
         if (this.ws) {
             this.ws.close();
@@ -96,9 +82,6 @@ class WebSocketManager {
         this.isConnected = false;
     }
 
-    /**
-     * 发送消息
-     */
     send(message) {
         if (!this.isConnected) {
             console.error('WebSocket 未连接');
@@ -114,9 +97,6 @@ class WebSocketManager {
         }
     }
 
-    /**
-     * 发送文本消息
-     */
     sendText(text) {
         return this.send({
             type: 'text',
@@ -124,9 +104,6 @@ class WebSocketManager {
         });
     }
 
-    /**
-     * 发送语音消息
-     */
     sendAudio(base64Audio) {
         return this.send({
             type: 'audio',
@@ -134,9 +111,6 @@ class WebSocketManager {
         });
     }
 
-    /**
-     * 发送图片消息
-     */
     sendImage(base64Image, text = '') {
         return this.send({
             type: 'image',
@@ -145,16 +119,10 @@ class WebSocketManager {
         });
     }
 
-    /**
-     * 处理收到的消息
-     */
     handleMessage(message) {
         const { type } = message;
-        
-        // 触发对应类型的事件
         this.emit(type, message);
         
-        // 特殊处理
         switch (type) {
             case 'text_response':
                 console.log('💬 AI 回复:', message.text);
@@ -171,9 +139,6 @@ class WebSocketManager {
         }
     }
 
-    /**
-     * 注册消息处理器
-     */
     on(event, handler) {
         if (!this.messageHandlers.has(event)) {
             this.messageHandlers.set(event, []);
@@ -181,9 +146,6 @@ class WebSocketManager {
         this.messageHandlers.get(event).push(handler);
     }
 
-    /**
-     * 移除消息处理器
-     */
     off(event, handler) {
         if (this.messageHandlers.has(event)) {
             const handlers = this.messageHandlers.get(event);
@@ -194,9 +156,6 @@ class WebSocketManager {
         }
     }
 
-    /**
-     * 触发事件
-     */
     emit(event, data) {
         if (this.messageHandlers.has(event)) {
             this.messageHandlers.get(event).forEach(handler => {
@@ -209,9 +168,6 @@ class WebSocketManager {
         }
     }
 
-    /**
-     * 更新连接状态显示
-     */
     updateStatus(status, text) {
         if (this.connectionStatusEl) {
             const dot = this.connectionStatusEl.querySelector('.status-dot');
@@ -223,5 +179,4 @@ class WebSocketManager {
     }
 }
 
-// 创建全局实例
 window.wsManager = new WebSocketManager();
