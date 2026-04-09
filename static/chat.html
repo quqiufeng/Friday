@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Friday AI 助手 - 语音对话</title>
+    <link rel="stylesheet" href="/static/css/chat.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 6v6l4 2"/>
+                </svg>
+                <span class="logo-text">Friday AI</span>
+            </div>
+            <div class="header-controls">
+                <button id="settingsBtn" class="icon-btn" title="设置">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.24-4.24l-4.24 4.24M6.34 6.34l-4.24-4.24"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- 主界面 -->
+        <main class="main-container">
+            <!-- 左侧：视频/图片显示 -->
+            <div class="left-panel">
+                <div class="video-container" id="videoContainer">
+                    <video id="cameraVideo" autoplay playsinline muted></video>
+                    <div class="video-placeholder" id="videoPlaceholder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <path d="M21 15l-5-5L5 21"/>
+                        </svg>
+                        <p>点击开启摄像头</p>
+                    </div>
+                    <button id="toggleCamera" class="camera-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                            <circle cx="12" cy="13" r="4"/>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- 图片预览区 -->
+                <div class="image-preview" id="imagePreview" style="display: none;">
+                    <img id="previewImg" src="" alt="预览">
+                    <button id="clearImage" class="clear-btn">×</button>
+                </div>
+            </div>
+
+            <!-- 右侧：对话区域 -->
+            <div class="right-panel">
+                <!-- 消息列表 -->
+                <div class="chat-container" id="chatContainer">
+                    <div class="welcome-message">
+                        <div class="avatar">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
+                        <div class="welcome-text">
+                            <h2>你好！我是 Friday</h2>
+                            <p>我可以帮你：</p>
+                            <ul>
+                                <li>🎤 语音对话 - 点击麦克风开始说话</li>
+                                <li>💬 文字聊天 - 直接输入文字</li>
+                                <li>📷 图片理解 - 开启摄像头或上传图片</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 输入区域 -->
+                <div class="input-area">
+                    <!-- 语音可视化 -->
+                    <div class="voice-visualizer" id="voiceVisualizer" style="display: none;">
+                        <canvas id="audioCanvas"></canvas>
+                        <span class="recording-text">正在聆听...</span>
+                    </div>
+
+                    <div class="input-controls">
+                        <button id="micBtn" class="control-btn mic-btn" title="语音输入">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                        </button>
+
+                        <div class="text-input-wrapper">
+                            <textarea 
+                                id="textInput" 
+                                placeholder="输入消息... (Shift+Enter 换行)"
+                                rows="1"
+                            ></textarea>
+                            <input type="file" id="imageInput" accept="image/*" hidden>
+                            <button id="uploadBtn" class="icon-btn" title="上传图片">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <path d="M21 15l-5-5L5 21"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <button id="sendBtn" class="control-btn send-btn" title="发送">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"/>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 状态栏 -->
+        <div class="status-bar">
+            <div class="status-item" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">连接中...</span>
+            </div>
+            <div class="status-item">
+                <span>模型: MiniCPM-V-2_6</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 音频元素 (用于播放语音) -->
+    <audio id="audioPlayer" style="display: none;"></audio>
+
+    <script src="/static/js/audio.js"></script>
+    <script src="/static/js/vision.js"></script>
+    <script src="/static/js/websocket.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
